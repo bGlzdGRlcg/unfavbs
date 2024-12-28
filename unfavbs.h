@@ -1,87 +1,93 @@
 #include <bits/stdc++.h>
 #include <iostream>
 #include <fstream>
-#include <vector>
-#include <opencv2/opencv.hpp>
 #include <sstream>
+#include <opencv2/opencv.hpp>
 #include <zlib.h>
-#include <windows.h>
-#include <locale>
-#include <codecvt>
-#include <map>
-#include <io.h>
+#include <filesystem>
+#include <iconv.h>
 
-using namespace std;
-using namespace cv;
+#define fn inline const auto
+#define let const auto
 
-unsigned int readbinhelf(ifstream &binfile){
+inline std::string ShiftJISToUTF8(const std::string& shiftjis) {
+    if (shiftjis.empty()) {
+        return "";
+    }
+    iconv_t conv = iconv_open("UTF-8", "SHIFT-JIS");
+    if (conv == (iconv_t)-1) {
+        std::cerr << "iconv_open failed: " << strerror(errno) << std::endl;
+        return "";
+    }
+    std::unique_ptr<void, decltype(&iconv_close)> conv_guard(conv, iconv_close);
+    size_t in_left = shiftjis.length();
+    size_t out_size = in_left * 3 + 1;
+    std::string result(out_size, '\0');
+    char* in_buf = const_cast<char*>(shiftjis.c_str());
+    char* out_buf = &result[0];
+    size_t out_left = out_size;
+    while (in_left > 0) {
+        size_t ret = iconv(conv, &in_buf, &in_left, &out_buf, &out_left);
+        if (ret == (size_t)-1) {
+            if (errno == E2BIG) {
+                size_t curr_size = result.size();
+                result.resize(curr_size + in_left * 3);
+                out_buf = &result[curr_size - out_left];
+                out_left += in_left * 3;
+                continue;
+            }
+            std::cerr << "iconv failed: " << strerror(errno) << std::endl;
+            return "";
+        }
+    }
+    result.resize(out_size - out_left);
+    return result;
+}
+
+fn readbinhelf(std::ifstream &binfile){
 	unsigned short int val;
 	binfile.read((char *) &val, 2);
 	return val;
 }
 
-unsigned int readbin(ifstream &binfile){
+fn readbin(std::ifstream &binfile){
 	unsigned int val;
 	binfile.read((char *) &val, 4);
 	return val;
 }
 
-unsigned int readpng(istringstream &pngfile){
+fn readpng(std::istringstream &pngfile){
 	unsigned int val;
 	pngfile.read((char *) &val, 4);
 	return val;
 }
 
-unsigned int readpnghelf(istringstream &pngfile){
+fn readpnghelf(std::istringstream &pngfile){
 	unsigned short int val;
 	pngfile.read((char *) &val, 2);
 	return val;
 }
 
-string ShiftJISToUTF8(const string& shiftjis) {
-    int len = MultiByteToWideChar(932,0,shiftjis.c_str(),-1,NULL,0);
-    if (len == 0) return "";
-    wstring wstr(len,0);
-    MultiByteToWideChar(932,0,shiftjis.c_str(),-1,&wstr[0],len);
-    len = WideCharToMultiByte(CP_UTF8,0,&wstr[0],-1,NULL,0,NULL,NULL);
-    if (len == 0) return "";
-    std::string utf8(len,0);
-    WideCharToMultiByte(CP_UTF8,0,&wstr[0],-1,&utf8[0],len,NULL,NULL);
-    return utf8;
-}
-
-string ShiftJISToGBK(const string& shiftjis) {
-    int len = MultiByteToWideChar(932, 0, shiftjis.c_str(), -1, NULL, 0);
-    if (len == 0) return "";
-    std::wstring wstr(len, 0);
-    MultiByteToWideChar(932, 0, shiftjis.c_str(), -1, &wstr[0], len);
-    len = WideCharToMultiByte(936, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
-    if (len == 0) return "";
-    string gbk(len, 0);
-    WideCharToMultiByte(936, 0, wstr.c_str(), -1, &gbk[0], len, NULL, NULL);
-    return gbk;
-}
-
-string getbinname(ifstream &binfile){
-	string str="";
+fn getbinname(std::ifstream &binfile){
+	std::string str="";
 	char ch;
     while (binfile.get(ch)) {
         if (int(ch) == 0) break;
         str += ch;
     }
-    return ShiftJISToGBK(str);
+    return ShiftJISToUTF8(str);
 }
 
-bool cmp(int a[],int b[]) {
+fn cmp(int a[],int b[]) {
     return a[0] < b[0];
 }
 
-void unbinout(ifstream &binfile,ofstream &outfile, streampos start, streampos end) {
+fn unbinout(std::ifstream &binfile,std::ofstream &outfile, std::streampos start, std::streampos end) {
     binfile.seekg(start);
     char buffer[1024];
-    streampos remaining = end - start;
+    std::streampos remaining = end - start;
     while (remaining > 0) {
-        size_t bytesToRead = min(remaining, static_cast<streampos>(sizeof(buffer)));
+        size_t bytesToRead = min(remaining, static_cast<std::streampos>(sizeof(buffer)));
         binfile.read(buffer, bytesToRead);
         outfile.write(buffer, bytesToRead);
         remaining -= bytesToRead;
@@ -89,25 +95,25 @@ void unbinout(ifstream &binfile,ofstream &outfile, streampos start, streampos en
     outfile.close();
 }
 
-istringstream decompressData(ifstream &inputFile, int startOffset, int uncompressedSize) {
+fn decompressData(std::ifstream &inputFile, int startOffset, int uncompressedSize) {
     inputFile.seekg(startOffset);
-    vector<char> buffer(uncompressedSize);
+    std::vector<char> buffer(uncompressedSize);
     inputFile.read(buffer.data(), uncompressedSize);
-    vector<char> uncompressedBuffer(uncompressedSize * 2);
+    std::vector<char> uncompressedBuffer(uncompressedSize * 2);
     uLongf destLen = uncompressedSize * 2;
     int result = uncompress((Bytef*)uncompressedBuffer.data(), &destLen, (const Bytef*)buffer.data(), uncompressedSize);
     if(result != Z_OK) {
-        cerr<<"Failed to decompress data. Error code: " <<result<<endl;
-        return istringstream();
+        std::cerr<<"Failed to decompress data. Error code: " <<result<<std::endl;
+        return std::istringstream();
         //return "";
     }
-    string decompressedData(uncompressedBuffer.begin(), uncompressedBuffer.begin() + destLen);
+    std::string decompressedData(uncompressedBuffer.begin(), uncompressedBuffer.begin() + destLen);
     //return decompressedData;
-	istringstream iss(decompressedData);
+	std::istringstream iss(decompressedData);
     return iss;
 }
 
-void overlayImages(const Mat &background, const Mat &foreground, Mat &output, int x, int y){
+fn overlayImages(const cv::Mat &background, const cv::Mat &foreground, cv::Mat &output, int x, int y){
     output = background.clone();
     cv::Rect roi(x, y, foreground.cols, foreground.rows);
     roi &= cv::Rect(0, 0, background.cols, background.rows);
@@ -127,3 +133,10 @@ void overlayImages(const Mat &background, const Mat &foreground, Mat &output, in
     }
 }
 
+fn endsWithFace(std::string str) {
+    int len = str.length();
+    if(str.substr(len-6,6) == "表情"){
+        return 1;
+    }
+    return 0;
+}

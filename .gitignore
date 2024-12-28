@@ -28,3 +28,9 @@
 # Executables
 *.out
 *.app
+
+
+# favbs
+*.bin
+*.bak
+unfavbs
